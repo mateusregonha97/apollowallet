@@ -1365,9 +1365,11 @@ function obNext(step){
     document.getElementById('ob-step-2').classList.add('active');
   } else if(step===2){
     var inc=parseMoney(document.getElementById('ob-income'))||0;
-    var cur=parseMoney(document.getElementById('ob-current'))||0;    if(!inc){showToast('Informe sua renda mensal');return;}
+    var cur=parseMoney(document.getElementById('ob-current'))||0;
+    if(!inc){showToast('Informe sua renda mensal');return;}
     if(!obData.timeline){showToast('Informe o prazo');return;}
-    obData.income=inc;obData.currentAmount=cur;
+    obData.income=inc;
+    obData.currentAmount=cur;
     buildObSummary();
     document.getElementById('ob-step-2').classList.remove('active');
     document.getElementById('ob-step-3').classList.add('active');
@@ -1413,45 +1415,43 @@ function createWallet(){
     var wallet=res.data[0];
     currentWallet=wallet;
 
-    // Calcula meta mensal proporcional por mês baseada na meta total do usuário
-    var curMes=getCurrentMonthKey();
-    var targetAmount=obData.targetAmount||0;
-    var monthlyGoal=obData.monthlyGoal||0;
-    var currentAmount=obData.currentAmount||0;
+    var currentAmount = obData.currentAmount||0;
+    var monthlyGoal   = obData.monthlyGoal||0;
+    var targetAmount  = obData.targetAmount||0;
+    var timeline      = obData.timeline||60;
+    var income        = obData.income||0;
+    var curMes        = getCurrentMonthKey();
+    var r             = 0.01; // 1% a.m.
 
-    // Salva meta do usuário
-    var goalInsert={
-      wallet_id:wallet.id,
-      objective:obData.objectiveLabel||'Objetivo financeiro',
-      current_income:obData.income||0,
-      target_amount:targetAmount,
-      deadline_months:obData.timeline||60,
-      monthly_goal:monthlyGoal
-    };
-
-    // Salva patrimônio inicial informado no onboarding no mês atual
-    var dataRows=[];
-    if(currentAmount>0){
-      dataRows.push({
-        wallet_id:wallet.id,
-        month:curMes,
-        itau_balance:currentAmount,
-        binance_balance:0,
-        nominal_return:0,
-        cart_pct:0,
-        cdi_pct:0,
-        cdi_rel:0,
-        goal_balance:S.goalPat[curMes]||0,
-        updated_at:new Date().toISOString()
-      });
-      // Atualiza S local imediatamente
-      S.itau=currentAmount;
-      S.realPat[curMes]=currentAmount;
+    // Gera metas mensais crescentes a partir do patrimônio atual
+    var MONTH_KEYS_ALL=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+    var now=new Date();
+    var startMonthIdx=now.getMonth();
+    var startYear=now.getFullYear();
+    var goalRows=[];
+    var pat=currentAmount;
+    for(var i=0;i<timeline&&i<36;i++){
+      var mIdx=(startMonthIdx+i)%12;
+      var yr=startYear+Math.floor((startMonthIdx+i)/12);
+      var key=MONTH_KEYS_ALL[mIdx]+'/'+String(yr).slice(2);
+      pat=Math.round(pat*(1+r)+monthlyGoal);
+      S.goalPat[key]=pat;
+      goalRows.push({wallet_id:wallet.id,month:key,itau_balance:0,binance_balance:0,nominal_return:0,cart_pct:0,cdi_pct:0,cdi_rel:0,goal_balance:pat,updated_at:new Date().toISOString()});
     }
 
-    // Se importou dados existentes (Mateus), usa os dados históricos reais
+    // Salva patrimônio inicial no mês atual
+    var patrimonioRow=null;
+    if(currentAmount>0){
+      patrimonioRow={wallet_id:wallet.id,month:curMes,itau_balance:currentAmount,binance_balance:0,nominal_return:0,cart_pct:0,cdi_pct:0,cdi_rel:0,goal_balance:S.goalPat[curMes]||0,updated_at:new Date().toISOString()};
+      S.itau=currentAmount;
+      S.realPat[curMes]=currentAmount;
+      // Atualiza goal do mês atual na lista
+      for(var j=0;j<goalRows.length;j++){if(goalRows[j].month===curMes){goalRows[j].itau_balance=currentAmount;break;}}
+    }
+
+    // Se usou dados existentes (Mateus), substitui tudo pelos dados reais
     if(obData.useExisting){
-      dataRows=[
+      goalRows=[
         {wallet_id:wallet.id,month:'jan/26',itau_balance:468950,binance_balance:0,nominal_return:6499.30,cart_pct:1.64,cdi_pct:1.16,cdi_rel:141.38,goal_balance:471900,updated_at:new Date().toISOString()},
         {wallet_id:wallet.id,month:'fev/26',itau_balance:458381,binance_balance:0,nominal_return:3983.46,cart_pct:1.00,cdi_pct:1.00,cdi_rel:100.00,goal_balance:480036,updated_at:new Date().toISOString()},
         {wallet_id:wallet.id,month:'mar/26',itau_balance:603455,binance_balance:0,nominal_return:5199.90,cart_pct:1.07,cdi_pct:1.21,cdi_rel:88.43,goal_balance:492126,updated_at:new Date().toISOString()},
@@ -1460,10 +1460,11 @@ function createWallet(){
       ];
     }
 
-    var insertGoal=sb.from('goals').insert([goalInsert]);
-    var insertData=dataRows.length>0?sb.from('wallet_data').insert(dataRows):Promise.resolve({});
+    // Insere goal e dados no Supabase
+    var goalInsert=sb.from('goals').insert([{wallet_id:wallet.id,objective:obData.objectiveLabel||'Meu objetivo',current_income:income,target_amount:targetAmount,deadline_months:timeline,monthly_goal:monthlyGoal}]);
+    var dataInsert=goalRows.length>0?sb.from('wallet_data').insert(goalRows):Promise.resolve({});
 
-    Promise.all([insertGoal,insertData]).then(function(){
+    Promise.all([goalInsert,dataInsert]).then(function(){
       loadWalletData().then(function(){
         loadMembers();loadGoals();
         var cur=syncMonthsToApp();
