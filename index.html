@@ -1046,18 +1046,30 @@ var RENT = [
 var RENT_MAP = {};
 RENT.forEach(function(r){RENT_MAP[r.mes]=r;});
 
-var ACUMULADO = {'2026':{label:'Jan a Abr/26'}};
-var a26=1,b26=1;
-RENT.forEach(function(r){a26*=(1+r.cart/100);b26*=(1+r.cdi/100);});
-ACUMULADO['2026'].cart=(a26-1)*100;
-ACUMULADO['2026'].cdi=(b26-1)*100;
-ACUMULADO['2026'].rel=ACUMULADO['2026'].cart/ACUMULADO['2026'].cdi*100;
+var ACUMULADO = {'2026':{label:'Jan a Mai/26',cart:0,cdi:0,rel:0}};
 
 var S = {
   itau:0, binance:0, rendimento:0,
   realPat:{},
   goalPat:{}
 };
+
+// ─── RESET COMPLETO DO ESTADO DO APP ─────────────────────────────────
+// Chamado sempre que um usuário loga — garante dados limpos
+function resetAppState(){
+  // Reseta RENT para todos pendentes e zerados
+  RENT.forEach(function(r){
+    r.cart=0;r.cdi=0;r.rel=0;r.rendNominal=0;r.pending=true;r.parcial=false;
+  });
+  // Reseta ACUMULADO
+  ACUMULADO['2026']={label:'Jan a Mai/26',cart:0,cdi:0,rel:0};
+  // Reseta S
+  S.itau=0;S.binance=0;S.rendimento=0;
+  S.realPat={};
+  S.goalPat={};
+  // Reseta período
+  currentPeriod=getCurrentMonthKey();
+}
 
 // ─── HELPERS ─────────────────────────────────────────────────────────
 function fmtBR(n,d){d=d===undefined?2:d;return n.toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});}
@@ -1285,8 +1297,10 @@ function _linkInviteAndEnter(){
     sb.from('wallets').select('*').eq('id',_inviteWalletId).maybeSingle().then(function(r){
       if(r.data){
         currentWallet=r.data;
+        resetAppState();
         loadWalletData().then(function(){
           loadMembers();
+          loadGoals();
           var cur=syncMonthsToApp();
           showScreen('screen-app');
           renderPeriod(cur);
@@ -1334,6 +1348,7 @@ function loadUserWallet(){
       console.log('members result:', JSON.stringify(res2));
       if(res2.data&&res2.data.wallets&&res2.data.wallets.id){
         currentWallet=res2.data.wallets;
+        resetAppState();
         loadWalletData().then(function(){
           loadMembers();
           loadGoals();
@@ -1475,6 +1490,7 @@ function createWallet(){
     var dataInsert=goalRows.length>0?sb.from('wallet_data').insert(goalRows):Promise.resolve({});
 
     Promise.all([goalInsert,dataInsert]).then(function(){
+      resetAppState();
       loadWalletData().then(function(){
         loadMembers();loadGoals();
         var cur=syncMonthsToApp();
@@ -1700,8 +1716,10 @@ function _linkInviteAndEnter(){
     sb.from('wallets').select('*').eq('id',_inviteWalletId).maybeSingle().then(function(r){
       if(r.data){
         currentWallet=r.data;
+        resetAppState();
         loadWalletData().then(function(){
           loadMembers();
+          loadGoals();
           var cur=syncMonthsToApp();
           showScreen('screen-app');
           renderPeriod(cur);
@@ -2216,34 +2234,52 @@ function setPeriodByMes(mes){
 var EVO={};
 function renderEvoChart(){
   var total=S.itau+S.binance;
-  var realPat=[
-    S.realPat['jan/26']||0,
-    S.realPat['fev/26']||0,
-    S.realPat['mar/26']||0,
-    S.realPat['abr/26']||0,
-    S.realPat['mai/26']||null,
-    null,null,null,null,null,null,null
-  ];
-  // Calcula lastIdx dinamicamente pelo mês atual
-  var lastIdx=getLastRealIdx(realPat);
-  // Metas do usuário carregadas do Supabase via S.goalPat
-  var MONTH_KEYS_EVO=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
-  var curYearShort=String(new Date().getFullYear()).slice(2);
-  var metaPat=MONTH_KEYS_EVO.map(function(m){
-    return S.goalPat[m+'/'+curYearShort]||0;
-  });
-  var growthRates=[];
-  for(var i=1;i<=lastIdx;i++){if(realPat[i]&&realPat[i-1])growthRates.push((realPat[i]-realPat[i-1])/realPat[i-1]);}
-  var avgGrowth=growthRates.reduce(function(s,r){return s+r;},0)/growthRates.length;
-  var projPat=realPat.slice();
-  for(var i=lastIdx+1;i<12;i++)projPat[i]=Math.round(projPat[i-1]*(1+avgGrowth));
+  var now=new Date();
+  var curYear=now.getFullYear();
+  var curYearShort=String(curYear).slice(2);
+  var MONTH_KEYS_ALL=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 
-  document.getElementById('evo-pill-atual').textContent='R$ '+fmtBR(total,0);
-  // Meta final do usuário (último mês com meta definida)
+  // Constrói realPat e metaPat 100% do S (que veio do Supabase)
+  var realPat=MONTH_KEYS_ALL.map(function(m){
+    var key=m+'/'+curYearShort;
+    return S.realPat[key]||null;
+  });
+  var metaPat=MONTH_KEYS_ALL.map(function(m){
+    var key=m+'/'+curYearShort;
+    return S.goalPat[key]||0;
+  });
+
+  // Calcula lastIdx — último mês com dado real
+  var lastIdx=-1;
+  for(var i=0;i<12;i++){if(realPat[i]&&realPat[i]>0)lastIdx=i;}
+
+  // Se não há dados históricos, usa só o mês atual
+  if(lastIdx<0){
+    var curMonthIdx=now.getMonth();
+    realPat[curMonthIdx]=total>0?total:null;
+    lastIdx=curMonthIdx;
+  }
+
+  // Calcula projeção baseada no crescimento médio dos meses reais
+  var growthRates=[];
+  for(var i=1;i<=lastIdx;i++){
+    if(realPat[i]&&realPat[i-1]&&realPat[i-1]>0)
+      growthRates.push((realPat[i]-realPat[i-1])/realPat[i-1]);
+  }
+  var avgGrowth=growthRates.length>0
+    ? growthRates.reduce(function(s,r){return s+r;},0)/growthRates.length
+    : 0.01; // 1% padrão se não há histórico
+
+  var projPat=realPat.slice();
+  var lastVal=realPat[lastIdx]||total;
+  for(var i=lastIdx+1;i<12;i++){
+    projPat[i]=Math.round(lastVal*(1+avgGrowth*(i-lastIdx)));
+  }
+
+  // Pills
+  document.getElementById('evo-pill-atual').textContent=total>0?'R$ '+fmtBR(total,0):'—';
   var metaFinal=0;
-  var MONTH_KEYS_EVO2=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
-  var curYrShort=String(new Date().getFullYear()).slice(2);
-  MONTH_KEYS_EVO2.forEach(function(m){var v=S.goalPat[m+'/'+curYrShort];if(v&&v>0)metaFinal=v;});
+  metaPat.forEach(function(v){if(v>0)metaFinal=v;});
   var metaPilEl=document.getElementById('evo-pill-meta');
   if(metaPilEl)metaPilEl.textContent=metaFinal>0?'R$ '+fmtBR(metaFinal,0):'—';
   var _lbl=document.getElementById('evo-cur-month-label');
@@ -2251,44 +2287,98 @@ function renderEvoChart(){
   var dist=metaFinal>0?metaFinal-total:0;
   document.getElementById('evo-pill-dist').textContent=metaFinal>0?(dist>0?'faltam R$ '+fmtBR(dist,0):'meta superada!'):'configure sua meta';
 
+  // Sem dados suficientes para o gráfico
+  var hasData=realPat.some(function(v){return v&&v>0;});
+  if(!hasData&&total===0){
+    document.getElementById('evo-chart-group').innerHTML='<text x="170" y="100" text-anchor="middle" font-size="12" fill="#4a6a8a" font-family="Inter">Insira dados para ver o gráfico</text>';
+    document.getElementById('evo-tbody').innerHTML='<tr><td colspan="4" style="text-align:center;padding:20px;color:#4a6a8a;font-size:12px;">Nenhum dado ainda</td></tr>';
+    return;
+  }
+
   EVO={realPat:realPat,metaPat:metaPat,projPat:projPat,lastIdx:lastIdx};
+
+  // Escala do gráfico — usa só valores > 0
+  var allVals=[];
+  realPat.forEach(function(v){if(v&&v>0)allVals.push(v);});
+  projPat.forEach(function(v){if(v&&v>0)allVals.push(v);});
+  metaPat.forEach(function(v){if(v>0)allVals.push(v);});
+  if(allVals.length===0)allVals=[total||1];
 
   var W=340,H=188,padL=30,padR=10,padT=14,padB=10;
   var chartW=W-padL-padR,chartH=H-padT-padB;
-  var allVals=metaPat.slice();
-  for(var i=0;i<projPat.length;i++){if(projPat[i])allVals.push(projPat[i]);}
-  var minV=Math.min.apply(null,allVals)*0.95;
-  var maxV=Math.max.apply(null,allVals)*1.03;
+  var minV=Math.min.apply(null,allVals)*0.92;
+  var maxV=Math.max.apply(null,allVals)*1.06;
+  if(maxV===minV){maxV=minV*1.2;}
+
   function toX(i){return padL+(i/11)*chartW;}
   function toY(v){return padT+chartH-((v-minV)/(maxV-minV))*chartH;}
 
   EVO.toX=toX;EVO.toY=toY;EVO.padL=padL;EVO.padT=padT;EVO.chartH=chartH;EVO.chartW=chartW;EVO.W=W;
 
-  var mP='',mA='';
-  for(var i=0;i<12;i++){var px=toX(i),py=toY(metaPat[i]);if(i===0){mP='M'+px+','+py;mA='M'+px+','+py;}else{mP+=' L'+px+','+py;mA+=' L'+px+','+py;}}
-  mA+=' L'+toX(11)+','+(padT+chartH)+' L'+toX(0)+','+(padT+chartH)+' Z';
-  var pP='M'+toX(lastIdx)+','+toY(projPat[lastIdx]);var pA='M'+toX(lastIdx)+','+toY(projPat[lastIdx]);
-  for(var i=lastIdx+1;i<12;i++){pP+=' L'+toX(i)+','+toY(projPat[i]);pA+=' L'+toX(i)+','+toY(projPat[i]);}
-  pA+=' L'+toX(11)+','+(padT+chartH)+' L'+toX(lastIdx)+','+(padT+chartH)+' Z';
-  var rP='',rA='';
-  for(var i=0;i<=lastIdx;i++){var px=toX(i),py=toY(realPat[i]);if(i===0){rP='M'+px+','+py;rA='M'+px+','+py;}else{rP+=' L'+px+','+py;rA+=' L'+px+','+py;}}
-  rA+=' L'+toX(lastIdx)+','+(padT+chartH)+' L'+toX(0)+','+(padT+chartH)+' Z';
-
+  // Paths — só desenha meta se tiver valores
   var svg='';
-  svg+='<path d="'+mA+'" fill="url(#gradMeta)"/>';
-  svg+='<path d="'+mP+'" fill="none" stroke="#f97316" stroke-width="1.5" stroke-dasharray="5,3" opacity="0.7"/>';
-  svg+='<path d="'+pA+'" fill="url(#gradProj)"/>';
-  svg+='<path d="'+pP+'" fill="none" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.7"/>';
-  svg+='<path d="'+rA+'" fill="url(#gradCart)"/>';
-  svg+='<path d="'+rP+'" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>';
-  for(var i=0;i<=lastIdx;i++){
-    var cx=toX(i),cy=toY(realPat[i]);
-    if(i===lastIdx){svg+='<circle cx="'+cx+'" cy="'+cy+'" r="4.5" fill="#38bdf8" stroke="#162033" stroke-width="2"/>';svg+='<text x="'+(cx+6)+'" y="'+(cy-5)+'" font-size="9" fill="#38bdf8" font-family="Inter" font-weight="700">'+Math.round(total/1000)+'k</text>';}
-    else{svg+='<circle cx="'+cx+'" cy="'+cy+'" r="3" fill="#38bdf8" stroke="#162033" stroke-width="1.5"/>';}
+  var hasMetaData=metaPat.some(function(v){return v>0;});
+  if(hasMetaData){
+    var mP='',mA='';
+    for(var i=0;i<12;i++){
+      var mv=metaPat[i]>0?metaPat[i]:minV;
+      var px=toX(i),py=toY(mv);
+      if(i===0){mP='M'+px+','+py;mA='M'+px+','+py;}
+      else{mP+=' L'+px+','+py;mA+=' L'+px+','+py;}
+    }
+    mA+=' L'+toX(11)+','+(padT+chartH)+' L'+toX(0)+','+(padT+chartH)+' Z';
+    svg+='<path d="'+mA+'" fill="url(#gradMeta)"/>';
+    svg+='<path d="'+mP+'" fill="none" stroke="#f97316" stroke-width="1.5" stroke-dasharray="5,3" opacity="0.7"/>';
   }
-  var mex=toX(11),mey=toY(metaPat[11]);
-  svg+='<circle cx="'+mex+'" cy="'+mey+'" r="3" fill="#f97316" stroke="#162033" stroke-width="1.5"/>';
-  if(metaPat[11]>0){svg+='<text x="'+(mex-4)+'" y="'+(mey-7)+'" font-size="9" fill="#f97316" font-family="Inter" font-weight="700" text-anchor="end">'+Math.round(metaPat[11]/1000)+'k</text>';}
+
+  // Projeção
+  if(lastIdx<11){
+    var pP='M'+toX(lastIdx)+','+toY(projPat[lastIdx]||lastVal);
+    var pA='M'+toX(lastIdx)+','+toY(projPat[lastIdx]||lastVal);
+    for(var i=lastIdx+1;i<12;i++){
+      if(projPat[i]){pP+=' L'+toX(i)+','+toY(projPat[i]);pA+=' L'+toX(i)+','+toY(projPat[i]);}
+    }
+    pA+=' L'+toX(11)+','+(padT+chartH)+' L'+toX(lastIdx)+','+(padT+chartH)+' Z';
+    svg+='<path d="'+pA+'" fill="url(#gradProj)"/>';
+    svg+='<path d="'+pP+'" fill="none" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.7"/>';
+  }
+
+  // Carteira real
+  var rP='',rA='',firstReal=true;
+  for(var i=0;i<=lastIdx;i++){
+    if(realPat[i]&&realPat[i]>0){
+      var px=toX(i),py=toY(realPat[i]);
+      if(firstReal){rP='M'+px+','+py;rA='M'+px+','+py;firstReal=false;}
+      else{rP+=' L'+px+','+py;rA+=' L'+px+','+py;}
+    }
+  }
+  if(!firstReal){
+    rA+=' L'+toX(lastIdx)+','+(padT+chartH)+' L'+toX(0)+','+(padT+chartH)+' Z';
+    svg+='<path d="'+rA+'" fill="url(#gradCart)"/>';
+    svg+='<path d="'+rP+'" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>';
+  }
+
+  // Dots nos pontos reais
+  for(var i=0;i<=lastIdx;i++){
+    if(realPat[i]&&realPat[i]>0){
+      var cx=toX(i),cy=toY(realPat[i]);
+      if(i===lastIdx){
+        svg+='<circle cx="'+cx+'" cy="'+cy+'" r="4.5" fill="#38bdf8" stroke="#162033" stroke-width="2"/>';
+        svg+='<text x="'+(cx+6)+'" y="'+(cy-5)+'" font-size="9" fill="#38bdf8" font-family="Inter" font-weight="700">'+Math.round(realPat[i]/1000)+'k</text>';
+      } else {
+        svg+='<circle cx="'+cx+'" cy="'+cy+'" r="3" fill="#38bdf8" stroke="#162033" stroke-width="1.5"/>';
+      }
+    }
+  }
+
+  // Label da meta final
+  if(metaFinal>0){
+    var mex=toX(11),mey=toY(metaFinal);
+    svg+='<circle cx="'+mex+'" cy="'+mey+'" r="3" fill="#f97316" stroke="#162033" stroke-width="1.5"/>';
+    svg+='<text x="'+(mex-4)+'" y="'+(mey-7)+'" font-size="9" fill="#f97316" font-family="Inter" font-weight="700" text-anchor="end">'+Math.round(metaFinal/1000)+'k</text>';
+  }
+
+  // Crosshair interativo
   svg+='<g id="evo-crosshair" style="display:none;">';
   svg+='<line id="evo-vline" x1="0" y1="'+padT+'" x2="0" y2="'+(padT+chartH)+'" stroke="rgba(255,255,255,.2)" stroke-width="1" stroke-dasharray="3,2"/>';
   svg+='<circle id="evo-dot-real" cx="0" cy="0" r="5" fill="#38bdf8" stroke="#162033" stroke-width="2"/>';
@@ -2296,6 +2386,7 @@ function renderEvoChart(){
   svg+='<circle id="evo-dot-proj" cx="0" cy="0" r="4" fill="#22c55e" stroke="#162033" stroke-width="1.5" style="display:none;"/>';
   svg+='</g>';
   svg+='<rect id="evo-touch-area" x="'+padL+'" y="'+padT+'" width="'+chartW+'" height="'+chartH+'" fill="transparent" style="cursor:crosshair;"/>';
+
   document.getElementById('evo-chart-group').innerHTML=svg;
 
   // Tooltip
@@ -2307,7 +2398,7 @@ function renderEvoChart(){
     document.querySelector('.evo-chart-wrap').appendChild(tooltipEl);
   }
 
-  var months=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  var months=MONTH_KEYS_ALL.map(function(m){return m.charAt(0).toUpperCase()+m.slice(1);});
 
   function handleChart(clientX,clientY){
     var svgEl=document.getElementById('evo-svg');
@@ -2316,25 +2407,26 @@ function renderEvoChart(){
     var rawX=(clientX-rect.left)*scaleX;
     var idx=Math.round((rawX-padL)/(chartW/11));
     idx=Math.max(0,Math.min(11,idx));
-    var isReal=idx<=lastIdx;
-    var valMeta=metaPat[idx];
+    var isReal=idx<=lastIdx&&realPat[idx]&&realPat[idx]>0;
+    var valMeta=metaPat[idx]||0;
     var cx=toX(idx);
     document.getElementById('evo-vline').setAttribute('x1',cx);document.getElementById('evo-vline').setAttribute('x2',cx);
     var dotReal=document.getElementById('evo-dot-real');
     if(isReal){dotReal.setAttribute('cx',cx);dotReal.setAttribute('cy',toY(realPat[idx]));dotReal.style.display='';}
     else{dotReal.style.display='none';}
-    var dotMeta=document.getElementById('evo-dot-meta');dotMeta.setAttribute('cx',cx);dotMeta.setAttribute('cy',toY(valMeta));
+    var dotMeta=document.getElementById('evo-dot-meta');
+    if(valMeta>0){dotMeta.setAttribute('cx',cx);dotMeta.setAttribute('cy',toY(valMeta));}
     var dotProj=document.getElementById('evo-dot-proj');
-    if(!isReal){dotProj.setAttribute('cx',cx);dotProj.setAttribute('cy',toY(projPat[idx]));dotProj.style.display='';}
+    if(!isReal&&projPat[idx]){dotProj.setAttribute('cx',cx);dotProj.setAttribute('cy',toY(projPat[idx]));dotProj.style.display='';}
     else{dotProj.style.display='none';}
     document.getElementById('evo-crosshair').style.display='';
-    var pct=isReal?((realPat[idx]/valMeta)*100).toFixed(1):((projPat[idx]/valMeta)*100).toFixed(1);
-    var pctColor=parseFloat(pct)>=100?'#22c55e':'#f97316';
-    var html='<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;letter-spacing:.5px;">'+(months[idx]+'/26').toUpperCase()+'</div>';
+    var pct=isReal&&valMeta>0?((realPat[idx]/valMeta)*100).toFixed(1):(!isReal&&projPat[idx]&&valMeta>0?((projPat[idx]/valMeta)*100).toFixed(1):null);
+    var pctColor=pct&&parseFloat(pct)>=100?'#22c55e':'#f97316';
+    var html='<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;">'+(months[idx]+'/'+curYearShort).toUpperCase()+'</div>';
     if(isReal){html+='<div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:4px;"><span style="color:var(--muted);">Carteira</span><span class="hide-val" style="color:#38bdf8;font-weight:700;">R$ '+fmtBR(realPat[idx],0)+'</span></div>';}
-    else{html+='<div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:4px;"><span style="color:var(--muted);">Projeção</span><span class="hide-val" style="color:#22c55e;font-weight:700;">R$ '+fmtBR(projPat[idx],0)+'</span></div>';}
-    html+='<div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:4px;"><span style="color:var(--muted);">Meta</span><span class="hide-val" style="color:#f97316;font-weight:700;">R$ '+fmtBR(valMeta,0)+'</span></div>';
-    html+='<div style="border-top:1px solid rgba(255,255,255,.06);margin-top:6px;padding-top:6px;display:flex;justify-content:space-between;"><span style="color:var(--muted);">Atingimento</span><span class="hide-val" style="font-weight:700;color:'+pctColor+';">'+pct+'%</span></div>';
+    else if(projPat[idx]){html+='<div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:4px;"><span style="color:var(--muted);">Projeção</span><span class="hide-val" style="color:#22c55e;font-weight:700;">R$ '+fmtBR(projPat[idx],0)+'</span></div>';}
+    if(valMeta>0){html+='<div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:4px;"><span style="color:var(--muted);">Meta</span><span class="hide-val" style="color:#f97316;font-weight:700;">R$ '+fmtBR(valMeta,0)+'</span></div>';}
+    if(pct){html+='<div style="border-top:1px solid rgba(255,255,255,.06);margin-top:6px;padding-top:6px;display:flex;justify-content:space-between;"><span style="color:var(--muted);">Atingimento</span><span class="hide-val" style="font-weight:700;color:'+pctColor+';">'+pct+'%</span></div>';}
     tooltipEl.innerHTML=html;
     var tipX=rect.left+(cx/scaleX);
     var wrapRect=document.querySelector('.evo-chart-wrap').getBoundingClientRect();
@@ -2344,7 +2436,6 @@ function renderEvoChart(){
     tooltipEl.style.left=tipLeft+'px';tooltipEl.style.top=(clientY-wrapRect.top-20)+'px';tooltipEl.style.display='block';
   }
   function hideTooltip(){document.getElementById('evo-crosshair').style.display='none';document.getElementById('evo-tooltip').style.display='none';}
-
   var ta=document.getElementById('evo-touch-area');
   ta.addEventListener('touchstart',function(e){e.preventDefault();handleChart(e.touches[0].clientX,e.touches[0].clientY);},{passive:false});
   ta.addEventListener('touchmove',function(e){e.preventDefault();handleChart(e.touches[0].clientX,e.touches[0].clientY);},{passive:false});
@@ -2352,35 +2443,26 @@ function renderEvoChart(){
   ta.addEventListener('mousemove',function(e){handleChart(e.clientX,e.clientY);});
   ta.addEventListener('mouseleave',hideTooltip);
 
-  // Tabela evo
-  var months2=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  // Tabela
   var tbody='';
   for(var i=0;i<12;i++){
-    var isR=i<=lastIdx&&realPat[i]&&realPat[i]>0;
-    var val=isR?realPat[i]:(projPat[i]||0);var meta=metaPat[i];
-    var pctV=((val/meta)*100);var ok=val>=meta;
+    var isR=realPat[i]&&realPat[i]>0;
+    var val=isR?realPat[i]:(projPat[i]||0);
+    var meta=metaPat[i]||0;
+    var hasVal=val>0;
+    var ok=meta>0&&val>=meta;
     var rowBg=i===lastIdx?'background:rgba(56,189,248,.05);':'';
     var valColor=isR?'#38bdf8':'#22c55e';
     var pctColor2=ok?'#22c55e':'#f97316';
+    var pctStr=meta>0?fmtBR((val/meta)*100,1)+'%':'—';
     tbody+='<tr style="'+rowBg+'">';
-    tbody+='<td style="padding:10px 14px;font-size:12px;color:'+(i===lastIdx?'#38bdf8':'#94a3b8')+';">'+months2[i]+'/26'+(isR?'':' ~')+'</td>';
-    tbody+='<td class="hide-val" style="padding:10px 14px;font-size:12px;text-align:right;color:'+valColor+';">R$ '+fmtBR(val,0)+'</td>';
-    tbody+='<td class="hide-val" style="padding:10px 14px;font-size:12px;text-align:right;color:#f97316;">R$ '+fmtBR(meta,0)+'</td>';
-    tbody+='<td class="hide-val" style="padding:10px 14px;font-size:12px;text-align:right;font-weight:700;color:'+pctColor2+';">'+fmtBR(pctV,1)+'%</td>';
+    tbody+='<td style="padding:10px 14px;font-size:12px;color:'+(i===lastIdx?'#38bdf8':'#94a3b8')+';">'+months[i]+'/'+curYearShort+(isR?'':i>lastIdx?' ~':'')+'</td>';
+    tbody+='<td class="hide-val" style="padding:10px 14px;font-size:12px;text-align:right;color:'+valColor+';">'+(hasVal?'R$ '+fmtBR(val,0):'—')+'</td>';
+    tbody+='<td class="hide-val" style="padding:10px 14px;font-size:12px;text-align:right;color:#f97316;">'+(meta>0?'R$ '+fmtBR(meta,0):'—')+'</td>';
+    tbody+='<td class="hide-val" style="padding:10px 14px;font-size:12px;text-align:right;font-weight:700;color:'+pctColor2+';">'+pctStr+'</td>';
     tbody+='</tr>';
   }
   document.getElementById('evo-tbody').innerHTML=tbody;
-}
-
-// ─── TOGGLE VIS ───────────────────────────────────────────────────────
-function toggleVis(){
-  valuesHidden=!valuesHidden;
-  document.body.classList.toggle('hidden-vals',valuesHidden);
-  var eyeHtml=valuesHidden
-    ?'<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
-    :'<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
-  var e1=document.getElementById('eye-icon');var e2=document.getElementById('eye-icon-evo');
-  if(e1)e1.innerHTML=eyeHtml;if(e2)e2.innerHTML=eyeHtml;
 }
 
 // ─── CLOCK ────────────────────────────────────────────────────────────
@@ -2427,6 +2509,7 @@ function skipOnboarding(){
       showToast('Erro: '+((res.error&&res.error.message)||'tente novamente'));return;
     }
     currentWallet=res.data[0];
+    resetAppState();
     loadWalletData().then(function(){
       loadMembers();
       var cur=syncMonthsToApp();
