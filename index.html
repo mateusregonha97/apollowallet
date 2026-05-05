@@ -481,6 +481,11 @@ body.hidden-vals .hide-val *{visibility:hidden;}
             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
           </svg>
         </span>
+        <span class="icon-btn" onclick="confirmLogout()" title="Sair">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+        </span>
     </div>
     </div>
 
@@ -707,13 +712,13 @@ body.hidden-vals .hide-val *{visibility:hidden;}
     <div style="display:flex;gap:10px;padding:0 4vw 18px;">
       <div style="flex:1;background:var(--bg2);border-radius:12px;padding:12px 14px;">
         <div style="font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Atual</div>
-        <div style="font-size:17px;font-weight:700;color:var(--accent);display:inline;" class="hide-val" id="evo-pill-atual">R$ 592.518</div>
+        <div style="font-size:17px;font-weight:700;color:var(--accent);display:inline;" class="hide-val" id="evo-pill-atual">—</div>
         <div style="font-size:10px;color:var(--green);margin-top:2px;" id="evo-cur-month-label">mai/26</div>
       </div>
       <div style="flex:1;background:var(--bg2);border-radius:12px;padding:12px 14px;">
         <div style="font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Meta Dez/26</div>
-        <div style="font-size:17px;font-weight:700;color:var(--orange);display:inline;" class="hide-val">R$ 778.156</div>
-        <div style="font-size:10px;color:var(--orange);margin-top:2px;" class="hide-val" id="evo-pill-dist">faltam R$ 185.638</div>
+        <div style="font-size:17px;font-weight:700;color:var(--orange);display:inline;" class="hide-val" id="evo-pill-meta">—</div>
+        <div style="font-size:10px;color:var(--orange);margin-top:2px;" class="hide-val" id="evo-pill-dist">—</div>
       </div>
     </div>
 
@@ -829,6 +834,20 @@ body.hidden-vals .hide-val *{visibility:hidden;}
     </div>
     <button class="save-btn" onclick="saveGoal()" style="margin-top:18px;">Salvar meta</button>
     <button class="cancel-btn" onclick="closeGoalModal()">Cancelar</button>
+  </div>
+</div>
+
+<!-- MODAL LOGOUT -->
+<div class="modal-overlay" id="logout-modal">
+  <div class="modal" style="max-height:auto;padding:28px 24px;">
+    <div class="modal-handle"></div>
+    <div style="text-align:center;margin-bottom:20px;">
+      <div style="font-size:36px;margin-bottom:12px;">👋</div>
+      <div style="font-size:17px;font-weight:700;margin-bottom:6px;">Sair da conta?</div>
+      <div style="font-size:13px;color:var(--muted);">Você precisará fazer login novamente para acessar sua carteira.</div>
+    </div>
+    <button class="save-btn" onclick="doLogout()" style="background:var(--red);margin-bottom:10px;">Sair da conta</button>
+    <button class="cancel-btn" onclick="closeLogoutModal()">Cancelar</button>
   </div>
 </div>
 
@@ -1352,7 +1371,7 @@ function useExistingGoals(){
   document.getElementById('ob-timeline-val').value=5;
   document.getElementById('ob-timeline-unit').value='years';
   document.getElementById('ob-current').value='R$ 592.518,00';
-  obData.timeline=60;obData.income=19300;obData.currentAmount=592518;
+  obData.timeline=60;obData.income=0;obData.currentAmount=0;
   buildObSummary();
   document.getElementById('ob-step-2').classList.remove('active');
   document.getElementById('ob-step-3').classList.add('active');
@@ -1449,16 +1468,7 @@ function createWallet(){
       for(var j=0;j<goalRows.length;j++){if(goalRows[j].month===curMes){goalRows[j].itau_balance=currentAmount;break;}}
     }
 
-    // Se usou dados existentes (Mateus), substitui tudo pelos dados reais
-    if(obData.useExisting){
-      goalRows=[
-        {wallet_id:wallet.id,month:'jan/26',itau_balance:468950,binance_balance:0,nominal_return:6499.30,cart_pct:1.64,cdi_pct:1.16,cdi_rel:141.38,goal_balance:471900,updated_at:new Date().toISOString()},
-        {wallet_id:wallet.id,month:'fev/26',itau_balance:458381,binance_balance:0,nominal_return:3983.46,cart_pct:1.00,cdi_pct:1.00,cdi_rel:100.00,goal_balance:480036,updated_at:new Date().toISOString()},
-        {wallet_id:wallet.id,month:'mar/26',itau_balance:603455,binance_balance:0,nominal_return:5199.90,cart_pct:1.07,cdi_pct:1.21,cdi_rel:88.43,goal_balance:492126,updated_at:new Date().toISOString()},
-        {wallet_id:wallet.id,month:'abr/26',itau_balance:590102,binance_balance:2415.76,nominal_return:1402.24,cart_pct:0.27,cdi_pct:0.33,cdi_rel:81.82,goal_balance:597942,updated_at:new Date().toISOString()},
-        {wallet_id:wallet.id,month:'mai/26',itau_balance:590102,binance_balance:2415.76,nominal_return:0,cart_pct:0,cdi_pct:0,cdi_rel:0,goal_balance:611212,updated_at:new Date().toISOString()}
-      ];
-    }
+    // useExisting removido - dados devem ser inseridos manualmente pelo usuário
 
     // Insere goal e dados no Supabase
     var goalInsert=sb.from('goals').insert([{wallet_id:wallet.id,objective:obData.objectiveLabel||'Meu objetivo',current_income:income,target_amount:targetAmount,deadline_months:timeline,monthly_goal:monthlyGoal}]);
@@ -1494,19 +1504,20 @@ function loadWalletData(){
         if(d.itau_balance>0){
           var curMes=getCurrentMonthKey();
           if(mes===curMes){
-            // Mês atual — atualiza saldo em tempo real
             S.itau=d.itau_balance;
-            S.binance=d.binance_balance||S.binance;
-            S.realPat[mes]=S.itau+S.binance;
-          } else {
-            S.realPat[mes]=d.itau_balance+(d.binance_balance||0);
+            S.binance=d.binance_balance||0;
           }
+          S.realPat[mes]=d.itau_balance+(d.binance_balance||0);
+        }
+        // Carrega metas do usuário salvas no wallet_data
+        if(d.goal_balance&&d.goal_balance>0){
+          S.goalPat[mes]=d.goal_balance;
         }
       });
 
-      // Garante que mês atual sempre mostra patrimônio atual
+      // Garante saldo no mês atual
       var curMes=getCurrentMonthKey();
-      if(!S.realPat[curMes]||S.realPat[curMes]===0){
+      if(S.itau>0&&(!S.realPat[curMes]||S.realPat[curMes]===0)){
         S.realPat[curMes]=S.itau+S.binance;
       }
 
@@ -1954,7 +1965,7 @@ function renderPeriod(period){
     document.getElementById('m-cdi').textContent='—';
     document.getElementById('m-meta').textContent='—';
     // Meta patrimonial — mostra mesmo sem rentabilidade
-    var meta=S.goalPat[period]||611212;
+    var meta=S.goalPat[period]||0;
     var pctMeta=(patAtual/meta)*100;
     var diff=patAtual-meta;
     document.getElementById('meta-sub').textContent=dates.display+' · meta: '+fmtR(meta);
@@ -2060,7 +2071,7 @@ function renderPeriod(period){
 
   // Meta patrimônio
   var goalKey=period==='2026'?'abr/26':period;
-  var meta=S.goalPat[goalKey]||597942;
+  var meta=S.goalPat[goalKey]||0;
   var pat=getPatrimonio(goalKey)||total2;
   var pctMeta=(pat/meta)*100;
   var diff=pat-meta;
@@ -2206,16 +2217,21 @@ var EVO={};
 function renderEvoChart(){
   var total=S.itau+S.binance;
   var realPat=[
-    S.realPat['jan/26']||468950,
-    S.realPat['fev/26']||458381,
-    S.realPat['mar/26']||603455,
-    S.realPat['abr/26']||592518,
+    S.realPat['jan/26']||0,
+    S.realPat['fev/26']||0,
+    S.realPat['mar/26']||0,
+    S.realPat['abr/26']||0,
     S.realPat['mai/26']||null,
     null,null,null,null,null,null,null
   ];
   // Calcula lastIdx dinamicamente pelo mês atual
   var lastIdx=getLastRealIdx(realPat);
-  var metaPat=[471900,480036,492126,597942,611212,624614,637600,651266,665069,748459,763234,778156];
+  // Metas do usuário carregadas do Supabase via S.goalPat
+  var MONTH_KEYS_EVO=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+  var curYearShort=String(new Date().getFullYear()).slice(2);
+  var metaPat=MONTH_KEYS_EVO.map(function(m){
+    return S.goalPat[m+'/'+curYearShort]||0;
+  });
   var growthRates=[];
   for(var i=1;i<=lastIdx;i++){if(realPat[i]&&realPat[i-1])growthRates.push((realPat[i]-realPat[i-1])/realPat[i-1]);}
   var avgGrowth=growthRates.reduce(function(s,r){return s+r;},0)/growthRates.length;
@@ -2223,10 +2239,17 @@ function renderEvoChart(){
   for(var i=lastIdx+1;i<12;i++)projPat[i]=Math.round(projPat[i-1]*(1+avgGrowth));
 
   document.getElementById('evo-pill-atual').textContent='R$ '+fmtBR(total,0);
+  // Meta final do usuário (último mês com meta definida)
+  var metaFinal=0;
+  var MONTH_KEYS_EVO2=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+  var curYrShort=String(new Date().getFullYear()).slice(2);
+  MONTH_KEYS_EVO2.forEach(function(m){var v=S.goalPat[m+'/'+curYrShort];if(v&&v>0)metaFinal=v;});
+  var metaPilEl=document.getElementById('evo-pill-meta');
+  if(metaPilEl)metaPilEl.textContent=metaFinal>0?'R$ '+fmtBR(metaFinal,0):'—';
   var _lbl=document.getElementById('evo-cur-month-label');
   if(_lbl)_lbl.textContent=getCurrentMonthKey();
-  var dist=metaPat[11]-total;
-  document.getElementById('evo-pill-dist').textContent=dist>0?'faltam R$ '+fmtBR(dist,0):'meta superada!';
+  var dist=metaFinal>0?metaFinal-total:0;
+  document.getElementById('evo-pill-dist').textContent=metaFinal>0?(dist>0?'faltam R$ '+fmtBR(dist,0):'meta superada!'):'configure sua meta';
 
   EVO={realPat:realPat,metaPat:metaPat,projPat:projPat,lastIdx:lastIdx};
 
@@ -2265,7 +2288,7 @@ function renderEvoChart(){
   }
   var mex=toX(11),mey=toY(metaPat[11]);
   svg+='<circle cx="'+mex+'" cy="'+mey+'" r="3" fill="#f97316" stroke="#162033" stroke-width="1.5"/>';
-  svg+='<text x="'+(mex-4)+'" y="'+(mey-7)+'" font-size="9" fill="#f97316" font-family="Inter" font-weight="700" text-anchor="end">778k</text>';
+  if(metaPat[11]>0){svg+='<text x="'+(mex-4)+'" y="'+(mey-7)+'" font-size="9" fill="#f97316" font-family="Inter" font-weight="700" text-anchor="end">'+Math.round(metaPat[11]/1000)+'k</text>';}
   svg+='<g id="evo-crosshair" style="display:none;">';
   svg+='<line id="evo-vline" x1="0" y1="'+padT+'" x2="0" y2="'+(padT+chartH)+'" stroke="rgba(255,255,255,.2)" stroke-width="1" stroke-dasharray="3,2"/>';
   svg+='<circle id="evo-dot-real" cx="0" cy="0" r="5" fill="#38bdf8" stroke="#162033" stroke-width="2"/>';
@@ -2566,6 +2589,15 @@ function saveGoal(){
 
 document.getElementById('goal-modal').addEventListener('click',function(e){if(e.target===this)closeGoalModal();});
 
+function confirmLogout(){
+  document.getElementById('logout-modal').classList.add('open');
+}
+function closeLogoutModal(){
+  document.getElementById('logout-modal').classList.remove('open');
+}
+document.getElementById('logout-modal').addEventListener('click',function(e){
+  if(e.target===this) closeLogoutModal();
+});
 function openShareModal(){
   loadMembers();
   document.getElementById('share-modal').classList.add('open');
