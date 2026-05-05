@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -1291,12 +1292,15 @@ function acceptInvite(){
 function loadUserWallet(){
   document.getElementById('loading').style.display='flex';
 
-  // 1. Tenta carteira própria
   sb.from('wallets').select('*').eq('owner_id',currentUser.id).maybeSingle().then(function(res){
+    console.log('wallets result:', JSON.stringify(res));
+    
     if(res.error){
       document.getElementById('loading').style.display='none';
+      showToast('Erro carteira: '+res.error.message);
       showScreen('screen-login');return;
     }
+
     if(res.data){
       currentWallet=res.data;
       loadWalletData().then(function(){
@@ -1309,8 +1313,9 @@ function loadUserWallet(){
       return;
     }
 
-    // 2. Tenta carteira compartilhada (usuário já aceitou convite antes)
+    console.log('Sem carteira própria, verificando membros...');
     sb.from('wallet_members').select('wallet_id,wallets(*)').eq('user_id',currentUser.id).maybeSingle().then(function(res2){
+      console.log('members result:', JSON.stringify(res2));
       if(res2.data&&res2.data.wallets&&res2.data.wallets.id){
         currentWallet=res2.data.wallets;
         loadWalletData().then(function(){
@@ -1322,7 +1327,6 @@ function loadUserWallet(){
         });
         return;
       }
-      // 3. Sem carteira nenhuma → onboarding
       document.getElementById('loading').style.display='none';
       showScreen('screen-onboarding');
     });
