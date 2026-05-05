@@ -1018,10 +1018,10 @@ var MONTH_NAMES_MAP = {
 
 // Dados padrão (serão sobrepostos pelo Supabase)
 var RENT = [
-  {mes:'jan/26',label:'jan',cart:1.64,cdi:1.16,rel:141.38,rendNominal:6499.30},
-  {mes:'fev/26',label:'fev',cart:1.00,cdi:1.00,rel:100.00,rendNominal:3983.46},
-  {mes:'mar/26',label:'mar',cart:1.07,cdi:1.21,rel:88.43, rendNominal:5199.90},
-  {mes:'abr/26',label:'abr',cart:0.27,cdi:0.33,rel:81.82, rendNominal:1402.24},
+  {mes:'jan/26',label:'jan',cart:0,cdi:0,rel:0,rendNominal:0,pending:true},
+  {mes:'fev/26',label:'fev',cart:0,cdi:0,rel:0,rendNominal:0,pending:true},
+  {mes:'mar/26',label:'mar',cart:0,cdi:0,rel:0,rendNominal:0,pending:true},
+  {mes:'abr/26',label:'abr',cart:0,cdi:0,rel:0,rendNominal:0,pending:true},
   {mes:'mai/26',label:'mai',cart:0,cdi:0,rel:0,rendNominal:0,parcial:true,pending:true}
 ];
 var RENT_MAP = {};
@@ -1035,11 +1035,13 @@ ACUMULADO['2026'].cdi=(b26-1)*100;
 ACUMULADO['2026'].rel=ACUMULADO['2026'].cart/ACUMULADO['2026'].cdi*100;
 
 var S = {
-  itau:590102.05, binance:2415.76, rendimento:1402.24,
-  realPat:{'jan/26':468950,'fev/26':458381,'mar/26':603455,'abr/26':592518,'mai/26':null},
-  goalPat:{'jan/26':471900,'fev/26':480036,'mar/26':492126,'abr/26':597942,
-           'mai/26':611212,'jun/26':624614,'jul/26':637600,'ago/26':651266,
-           'set/26':665069,'out/26':748459,'nov/26':763234,'dez/26':778156}
+  itau:0, binance:0, rendimento:0,
+  realPat:{},
+  goalPat:{
+    'jan/26':471900,'fev/26':480036,'mar/26':492126,'abr/26':597942,
+    'mai/26':611212,'jun/26':624614,'jul/26':637600,'ago/26':651266,
+    'set/26':665069,'out/26':748459,'nov/26':763234,'dez/26':778156
+  }
 };
 
 // ─── HELPERS ─────────────────────────────────────────────────────────
