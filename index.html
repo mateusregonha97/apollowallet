@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -1439,22 +1438,45 @@ function loadWalletData(){
       res.data.forEach(function(d){
         var mes=d.month;
         if(RENT_MAP[mes]){
-          RENT_MAP[mes].cart=d.cart_pct||RENT_MAP[mes].cart;
-          RENT_MAP[mes].cdi=d.cdi_pct||RENT_MAP[mes].cdi;
-          RENT_MAP[mes].rel=d.cdi_rel||RENT_MAP[mes].rel;
-          RENT_MAP[mes].rendNominal=d.nominal_return||RENT_MAP[mes].rendNominal;
+          if(d.cart_pct&&d.cart_pct!==0){
+            RENT_MAP[mes].cart=d.cart_pct;
+            RENT_MAP[mes].cdi=d.cdi_pct;
+            RENT_MAP[mes].rel=d.cdi_rel;
+            RENT_MAP[mes].pending=false;
+            RENT_MAP[mes].parcial=false;
+          }
+          if(d.nominal_return&&d.nominal_return!==0) RENT_MAP[mes].rendNominal=d.nominal_return;
         }
         if(d.itau_balance>0){
-          if(mes==='abr/26'){S.itau=d.itau_balance;S.binance=d.binance_balance||S.binance;}
-          else{S.realPat[mes]=d.itau_balance+(d.binance_balance||0);}
+          var curMes=getCurrentMonthKey();
+          if(mes===curMes){
+            // Mês atual — atualiza saldo em tempo real
+            S.itau=d.itau_balance;
+            S.binance=d.binance_balance||S.binance;
+            S.realPat[mes]=S.itau+S.binance;
+          } else {
+            S.realPat[mes]=d.itau_balance+(d.binance_balance||0);
+          }
         }
       });
+
+      // Garante que mês atual sempre mostra patrimônio atual
+      var curMes=getCurrentMonthKey();
+      if(!S.realPat[curMes]||S.realPat[curMes]===0){
+        S.realPat[curMes]=S.itau+S.binance;
+      }
+
       // Recalcula acumulado
       var aa=1,bb=1;
-      RENT.forEach(function(r){aa*=(1+r.cart/100);bb*=(1+r.cdi/100);});
+      RENT.forEach(function(r){
+        if(!r.pending&&r.cart!==0){
+          aa*=(1+r.cart/100);
+          bb*=(1+r.cdi/100);
+        }
+      });
       ACUMULADO['2026'].cart=(aa-1)*100;
       ACUMULADO['2026'].cdi=(bb-1)*100;
-      ACUMULADO['2026'].rel=ACUMULADO['2026'].cart/ACUMULADO['2026'].cdi*100;
+      ACUMULADO['2026'].rel=bb>1?ACUMULADO['2026'].cart/ACUMULADO['2026'].cdi*100:0;
     }
   });
 }
@@ -1864,50 +1886,64 @@ function renderPeriod(period){
   var dates=PERIOD_DATES[period]||PERIOD_DATES['mai/26'];
   var cart,cdi,rel,rendR,isAcum=false;
 
-  // Verifica se é mês pendente (sem dados ainda)
+  // Verifica se é mês pendente (sem rentabilidade ainda)
   var r=RENT_MAP[period];
+  var curMes=getCurrentMonthKey();
   var isPending=r&&r.pending&&r.cart===0;
+  var total=S.itau+S.binance;
+  var patAtual=S.realPat[period]||total;
 
   if(isPending){
-    // Exibe tela de "aguardando dados"
-    document.getElementById('saldo-total').textContent='R$ '+((S.itau+S.binance).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}));
-    document.getElementById('saldo-data').textContent='dados de '+dates.display+' ainda não disponíveis';
+    // Mostra patrimônio atual mas indica que rentabilidade está pendente
+    document.getElementById('saldo-total').textContent='R$ '+total.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+    document.getElementById('saldo-data').textContent=period===curMes?'saldo atual · rentabilidade pendente':'dados de '+dates.display+' pendentes';
     document.getElementById('rend-val').textContent='—';
-    document.getElementById('rend-period').textContent='Atualize os dados quando disponível';
+    document.getElementById('rend-period').textContent='Atualize a rentabilidade quando o extrato fechar';
     document.getElementById('donut-month').textContent=dates.display.toUpperCase();
-    document.getElementById('donut-val').textContent='—';
-    document.getElementById('donut-sub').textContent='aguardando dados';
-    document.getElementById('donut-ganho').textContent='pendente';
+    document.getElementById('donut-val').textContent=fmtR(patAtual);
+    document.getElementById('donut-sub').textContent='carteira total';
+    document.getElementById('donut-ganho').textContent='rentab. pendente';
     document.getElementById('donut-ganho').style.color='var(--muted)';
     document.getElementById('donut-ganho').style.background='rgba(255,255,255,.05)';
     document.getElementById('donut-ganho').style.borderColor='rgba(255,255,255,.1)';
     document.getElementById('m-cart').textContent='—';
     document.getElementById('m-cdi').textContent='—';
     document.getElementById('m-meta').textContent='—';
-    document.getElementById('meta-sub').textContent=dates.display+' · dados pendentes';
-    document.getElementById('meta-badge').textContent='⏳ Pendente';
-    document.getElementById('meta-badge').className='cc-badge';
-    document.getElementById('meta-badge').style.color='var(--muted)';
-    document.getElementById('mv-atual').textContent='—';
-    document.getElementById('mv-meta').textContent=fmtR(S.goalPat[period]||611212);
-    document.getElementById('diff-val').textContent='—';
-    document.getElementById('diff-lbl').textContent='Insira os dados do mês';
-    document.getElementById('meta-pct').textContent='—';
+    // Meta patrimonial — mostra mesmo sem rentabilidade
+    var meta=S.goalPat[period]||611212;
+    var pctMeta=(patAtual/meta)*100;
+    var diff=patAtual-meta;
+    document.getElementById('meta-sub').textContent=dates.display+' · meta: '+fmtR(meta);
+    document.getElementById('meta-badge').textContent=diff>=0?'✓ Atingida':'✗ Abaixo';
+    document.getElementById('meta-badge').className='cc-badge '+(diff>=0?'badge-green':'badge-red');
+    document.getElementById('meta-badge').style.color='';
+    document.getElementById('mv-atual').textContent=fmtR(patAtual);
+    document.getElementById('mv-meta').textContent=fmtR(meta);
+    var barW=Math.min((patAtual/meta)*100,100);
+    document.getElementById('meta-fill').style.width='0%';
+    setTimeout(function(){document.getElementById('meta-fill').style.width=barW+'%';},100);
+    var diffBox=document.getElementById('diff-box');
+    diffBox.className='diff-box '+(diff>=0?'diff-above':'diff-below');
+    document.getElementById('diff-lbl').textContent=diff>=0?'Acima da meta':'Falta para a meta';
+    document.getElementById('diff-val').textContent=fmtR(Math.abs(diff));
+    document.getElementById('diff-val').style.color=diff>=0?'#22c55e':'#f87171';
+    document.getElementById('meta-pct').textContent=fmtBR(pctMeta,1)+'%';
+    document.getElementById('meta-pct').style.color=pctMeta>=100?'#22c55e':'#f97316';
     document.getElementById('period-pill').textContent=dates.pill;
     document.getElementById('rh-val').textContent='—';
-    document.getElementById('rh-date').textContent='Dados ainda não disponíveis';
+    document.getElementById('rh-date').textContent='Extrato ainda não disponível';
     document.getElementById('rh-cart').textContent='—';
     document.getElementById('rh-cdi').textContent='—';
-    document.getElementById('rh-rel').textContent='Atualize quando o extrato estiver disponível';
+    document.getElementById('rh-rel').textContent='Atualize quando o extrato do mês fechar';
     document.getElementById('cdi-card-sub').textContent=dates.display;
-    document.getElementById('cdi-badge').textContent='—';
+    document.getElementById('cdi-badge').textContent='— pendente';
     document.getElementById('bl-cart').textContent='—';
     document.getElementById('bl-cdi').textContent='—';
     document.getElementById('bl-diff').textContent='—';
     document.getElementById('cdi-pct-lbl').textContent='—';
-    document.getElementById('itau-month-rent').textContent='pendente';
     document.getElementById('prod-itau-val').textContent=fmtR(S.itau);
     document.getElementById('prod-binance-val').textContent=fmtR(S.binance);
+    document.getElementById('itau-month-rent').textContent='pendente';
     renderBarGrid(period);
     renderRentTable(period);
     return;
