@@ -1037,11 +1037,7 @@ ACUMULADO['2026'].rel=ACUMULADO['2026'].cart/ACUMULADO['2026'].cdi*100;
 var S = {
   itau:0, binance:0, rendimento:0,
   realPat:{},
-  goalPat:{
-    'jan/26':471900,'fev/26':480036,'mar/26':492126,'abr/26':597942,
-    'mai/26':611212,'jun/26':624614,'jul/26':637600,'ago/26':651266,
-    'set/26':665069,'out/26':748459,'nov/26':763234,'dez/26':778156
-  }
+  goalPat:{}
 };
 
 // ─── HELPERS ─────────────────────────────────────────────────────────
@@ -1408,27 +1404,72 @@ function createWallet(){
   if(!currentUser){showToast('Faça login primeiro');return;}
   var btn=document.getElementById('ob-create-btn');
   if(btn){btn.textContent='Criando...';btn.disabled=true;}
+
   sb.from('wallets').insert([{owner_id:currentUser.id,name:'Minha Carteira'}]).select().then(function(res){
     if(res.error||!res.data||!res.data[0]){
       if(btn){btn.textContent='Criar minha carteira';btn.disabled=false;}
       showToast('Erro: '+((res.error&&res.error.message)||'tente novamente'));return;
     }
-    var wallet=res.data[0];currentWallet=wallet;
-    sb.from('goals').insert([{wallet_id:wallet.id,objective:obData.objectiveLabel,current_income:obData.income,target_amount:obData.targetAmount,deadline_months:obData.timeline,monthly_goal:obData.monthlyGoal}]).then(function(){
-      if(obData.useExisting){
-        var rows=[
-          {wallet_id:wallet.id,month:'jan/26',itau_balance:468950,binance_balance:0,nominal_return:6499.30,cart_pct:1.64,cdi_pct:1.16,cdi_rel:141.38,goal_balance:471900,updated_at:new Date().toISOString()},
-          {wallet_id:wallet.id,month:'fev/26',itau_balance:458381,binance_balance:0,nominal_return:3983.46,cart_pct:1.00,cdi_pct:1.00,cdi_rel:100.00,goal_balance:480036,updated_at:new Date().toISOString()},
-          {wallet_id:wallet.id,month:'mar/26',itau_balance:603455,binance_balance:0,nominal_return:5199.90,cart_pct:1.07,cdi_pct:1.21,cdi_rel:88.43,goal_balance:492126,updated_at:new Date().toISOString()},
-          {wallet_id:wallet.id,month:'abr/26',itau_balance:590102,binance_balance:2415.76,nominal_return:1402.24,cart_pct:0.27,cdi_pct:0.33,cdi_rel:81.82,goal_balance:597942,updated_at:new Date().toISOString()}
-        ];
-        sb.from('wallet_data').insert(rows).then(function(r2){
-          if(r2.error){showToast('Aviso: '+r2.error.message);}
-          loadWalletData().then(function(){loadMembers();showScreen('screen-app');renderPeriod('2026');});
-        });
-      } else {
-        loadWalletData().then(function(){loadMembers();showScreen('screen-app');renderPeriod('2026');});
-      }
+    var wallet=res.data[0];
+    currentWallet=wallet;
+
+    // Calcula meta mensal proporcional por mês baseada na meta total do usuário
+    var curMes=getCurrentMonthKey();
+    var targetAmount=obData.targetAmount||0;
+    var monthlyGoal=obData.monthlyGoal||0;
+    var currentAmount=obData.currentAmount||0;
+
+    // Salva meta do usuário
+    var goalInsert={
+      wallet_id:wallet.id,
+      objective:obData.objectiveLabel||'Objetivo financeiro',
+      current_income:obData.income||0,
+      target_amount:targetAmount,
+      deadline_months:obData.timeline||60,
+      monthly_goal:monthlyGoal
+    };
+
+    // Salva patrimônio inicial informado no onboarding no mês atual
+    var dataRows=[];
+    if(currentAmount>0){
+      dataRows.push({
+        wallet_id:wallet.id,
+        month:curMes,
+        itau_balance:currentAmount,
+        binance_balance:0,
+        nominal_return:0,
+        cart_pct:0,
+        cdi_pct:0,
+        cdi_rel:0,
+        goal_balance:S.goalPat[curMes]||0,
+        updated_at:new Date().toISOString()
+      });
+      // Atualiza S local imediatamente
+      S.itau=currentAmount;
+      S.realPat[curMes]=currentAmount;
+    }
+
+    // Se importou dados existentes (Mateus), usa os dados históricos reais
+    if(obData.useExisting){
+      dataRows=[
+        {wallet_id:wallet.id,month:'jan/26',itau_balance:468950,binance_balance:0,nominal_return:6499.30,cart_pct:1.64,cdi_pct:1.16,cdi_rel:141.38,goal_balance:471900,updated_at:new Date().toISOString()},
+        {wallet_id:wallet.id,month:'fev/26',itau_balance:458381,binance_balance:0,nominal_return:3983.46,cart_pct:1.00,cdi_pct:1.00,cdi_rel:100.00,goal_balance:480036,updated_at:new Date().toISOString()},
+        {wallet_id:wallet.id,month:'mar/26',itau_balance:603455,binance_balance:0,nominal_return:5199.90,cart_pct:1.07,cdi_pct:1.21,cdi_rel:88.43,goal_balance:492126,updated_at:new Date().toISOString()},
+        {wallet_id:wallet.id,month:'abr/26',itau_balance:590102,binance_balance:2415.76,nominal_return:1402.24,cart_pct:0.27,cdi_pct:0.33,cdi_rel:81.82,goal_balance:597942,updated_at:new Date().toISOString()},
+        {wallet_id:wallet.id,month:'mai/26',itau_balance:590102,binance_balance:2415.76,nominal_return:0,cart_pct:0,cdi_pct:0,cdi_rel:0,goal_balance:611212,updated_at:new Date().toISOString()}
+      ];
+    }
+
+    var insertGoal=sb.from('goals').insert([goalInsert]);
+    var insertData=dataRows.length>0?sb.from('wallet_data').insert(dataRows):Promise.resolve({});
+
+    Promise.all([insertGoal,insertData]).then(function(){
+      loadWalletData().then(function(){
+        loadMembers();loadGoals();
+        var cur=syncMonthsToApp();
+        showScreen('screen-app');
+        renderPeriod(cur);
+      });
     });
   });
 }
@@ -2385,7 +2426,39 @@ function loadGoals(){
     var listEl=document.getElementById('goals-list');
     var banner=document.getElementById('no-goals-banner');
 
-    // Mostra/esconde banner na home
+    if(res.data&&res.data.length>0){
+      // Gera S.goalPat baseado na meta do usuário
+      var g=res.data[0];
+      var targetAmount=g.target_amount||0;
+      var currentAmount=g.monthly_goal||0;
+      var months=g.deadline_months||60;
+      var r=0.01;
+
+      // Calcula meta mensal de patrimônio crescente desde hoje
+      var now=new Date();
+      var MONTH_KEYS=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+      var curMonthIdx=now.getMonth();
+      var curYear=now.getFullYear();
+
+      // Distribui a meta ao longo dos meses
+      var pat=S.itau+S.binance; // patrimônio atual
+      for(var i=0;i<months&&i<24;i++){
+        var mIdx=(curMonthIdx+i)%12;
+        var yr=curYear+Math.floor((curMonthIdx+i)/12);
+        var key=MONTH_KEYS[mIdx]+'/'+String(yr).slice(2);
+        // Meta: patrimônio atual + aportes + juros compostos
+        pat=Math.round(pat*(1+r)+g.monthly_goal);
+        S.goalPat[key]=pat;
+      }
+
+      // Meta do mês atual = target se só tiver 1 meta simples
+      var curMes=getCurrentMonthKey();
+      if(!S.goalPat[curMes]&&targetAmount>0){
+        S.goalPat[curMes]=targetAmount;
+      }
+    }
+
+    // Mostra/esconde banner
     if(banner) banner.style.display=(!res.data||res.data.length===0)?'block':'none';
 
     if(!listEl)return;
