@@ -2724,7 +2724,8 @@ function loadGoals(){
         var key=MONTH_KEYS[mIdx]+'/'+String(yr).slice(2);
         // Meta: patrimônio atual + aportes + juros compostos
         pat=Math.round(pat*(1+r)+g.monthly_goal);
-        S.goalPat[key]=pat;
+        // Só sobrescreve se não tiver meta específica vinda do wallet_data
+        if(!S.goalPat[key]) S.goalPat[key]=pat;
       }
 
       // Meta do mês atual = target se só tiver 1 meta simples
