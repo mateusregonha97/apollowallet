@@ -296,10 +296,55 @@ body.hidden-vals .hide-val *{visibility:hidden;}
       <input class="auth-input" id="login-password" type="password" placeholder="Senha" autocomplete="current-password">
       <div class="auth-error" id="login-error"></div>
       <button class="auth-btn" onclick="doLogin()">Entrar</button>
+      <div class="auth-link fu" style="margin-top:8px;" onclick="showScreen('screen-forgot-password')">Esqueci minha senha</div>
       <div class="auth-divider">ou</div>
       <button class="auth-btn secondary" onclick="showScreen('screen-register')">Criar conta</button>
     </div>
     <div class="auth-footer fu">Seus dados são privados e seguros</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     TELA: RECUPERAR SENHA
+══════════════════════════════════════ -->
+<div class="screen" id="screen-forgot-password">
+  <div class="auth-wrap">
+    <div class="auth-logo fu">
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <defs><linearGradient id="lg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#38bdf8"/><stop offset="100%" stop-color="#818cf8"/></linearGradient></defs>
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" stroke="url(#lg2)"/>
+      </svg>
+    </div>
+    <div class="auth-title fu">Recuperar senha</div>
+    <div class="auth-sub fu">Enviaremos um link para você redefinir sua senha</div>
+    <div class="auth-box fu">
+      <input class="auth-input" id="forgot-email" type="email" placeholder="Seu e-mail" autocomplete="email">
+      <div class="auth-error" id="forgot-error"></div>
+      <div class="auth-success" id="forgot-success" style="display:none;color:#34d399;font-size:13px;text-align:center;padding:8px 0;"></div>
+      <button class="auth-btn" onclick="doForgotPassword()">Enviar link de recuperação</button>
+    </div>
+    <div class="auth-link fu" onclick="showScreen('screen-login')">Voltar para o <span>login</span></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     TELA: REDEFINIR SENHA
+══════════════════════════════════════ -->
+<div class="screen" id="screen-reset-password">
+  <div class="auth-wrap">
+    <div class="auth-logo fu">
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" stroke="url(#lg2)"/>
+      </svg>
+    </div>
+    <div class="auth-title fu">Nova senha</div>
+    <div class="auth-sub fu">Escolha uma nova senha para sua conta</div>
+    <div class="auth-box fu">
+      <input class="auth-input" id="reset-password" type="password" placeholder="Nova senha (mínimo 6 caracteres)">
+      <input class="auth-input" id="reset-password-confirm" type="password" placeholder="Confirme a nova senha">
+      <div class="auth-error" id="reset-error"></div>
+      <button class="auth-btn" onclick="doResetPassword()">Redefinir senha</button>
+    </div>
   </div>
 </div>
 
@@ -1236,6 +1281,37 @@ function doLogout(){
     currentUser=null;currentWallet=null;currentPeriod='2026';
     _inviteToken=null;_inviteWalletId=null;_processingInvite=false;
     showScreen('screen-login');
+  });
+}
+
+function doForgotPassword(){
+  var email=document.getElementById('forgot-email').value.trim();
+  var errEl=document.getElementById('forgot-error');
+  var okEl=document.getElementById('forgot-success');
+  errEl.style.display='none';okEl.style.display='none';
+  if(!email){errEl.textContent='Informe seu e-mail.';errEl.style.display='block';return;}
+  document.getElementById('loading').style.display='flex';
+  sb.auth.resetPasswordForEmail(email).then(function(res){
+    document.getElementById('loading').style.display='none';
+    if(res.error){errEl.textContent=res.error.message;errEl.style.display='block';return;}
+    okEl.textContent='Link enviado! Verifique sua caixa de entrada.';okEl.style.display='block';
+    document.getElementById('forgot-email').value='';
+  });
+}
+
+function doResetPassword(){
+  var pass=document.getElementById('reset-password').value;
+  var confirm=document.getElementById('reset-password-confirm').value;
+  var errEl=document.getElementById('reset-error');
+  errEl.style.display='none';
+  if(pass.length<6){errEl.textContent='A senha deve ter no mínimo 6 caracteres.';errEl.style.display='block';return;}
+  if(pass!==confirm){errEl.textContent='As senhas não coincidem.';errEl.style.display='block';return;}
+  document.getElementById('loading').style.display='flex';
+  sb.auth.updateUser({password:pass}).then(function(res){
+    document.getElementById('loading').style.display='none';
+    if(res.error){errEl.textContent=res.error.message;errEl.style.display='block';return;}
+    showToast('Senha redefinida com sucesso!');
+    sb.auth.signOut().then(function(){showScreen('screen-login');});
   });
 }
 
@@ -2556,6 +2632,11 @@ updateClock();setInterval(updateClock,30000);
 // ─── INIT ─────────────────────────────────────────────────────────────
 // ─── SESSION RESTORE (só ao reabrir o app) ───────────────────────────
 sb.auth.onAuthStateChange(function(event,session){
+  if(event==='PASSWORD_RECOVERY'){
+    document.getElementById('loading').style.display='none';
+    showScreen('screen-reset-password');
+    return;
+  }
   // Só restaura sessão ao abrir o app — login/cadastro são tratados direto
   if(event!=='INITIAL_SESSION') return;
 
